@@ -1,29 +1,35 @@
-// app/api/proposals/route.ts
-import { NextResponse } from 'next/server';
-
-// Temporary in-memory store (Replace with Supabase/database later)
-export const proposalsStore = new Map<string, any>();
+import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import { saveProposal } from "@/lib/store";
 
 export async function POST(req: Request) {
+  const apiKey = process.env.PROPOSALS_API_KEY;
+  if (apiKey && req.headers.get("x-api-key") !== apiKey) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
-    
-    // Parse JSON string if Make.com sends it wrapped as a string
-    const proposalData = typeof body === 'string' ? JSON.parse(body) : body;
-    
-    // Generate a unique ID for this proposal
-    const proposalId = `prop_${Date.now()}`;
-    
-    // Store the proposal payload
-    proposalsStore.set(proposalId, proposalData);
 
-    // Return the response URL back to Make.com
-    return NextResponse.json({ 
-      success: true, 
-      proposalId, 
-      url: `https://your-domain.vercel.app/proposal/${proposalId}` 
+    // Make.com sometimes sends the JSON wrapped as a string
+    const data = typeof body === "string" ? JSON.parse(body) : body;
+
+    const id = `prop_${randomUUID()}`;
+    await saveProposal({
+      ...data,
+      id,
+      createdAt: new Date().toISOString(),
     });
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to process proposal data' }, { status: 500 });
+
+    const origin = new URL(req.url).origin;
+    return NextResponse.json(
+      { success: true, proposalId: id, url: `${origin}/proposal/${id}` },
+      { status: 201 }
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to process proposal data" },
+      { status: 400 }
+    );
   }
 }
